@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use GatewayClient\Gateway;
 use Auth;
 use App\Message;
+use App\User;
 
 
 class HomeController extends Controller
@@ -28,8 +29,10 @@ class HomeController extends Controller
      *
      * @return \Illuminate\Http\Response
      */
-    public function index()
-    {
+    public function index(Request $request)
+    {   
+        $room_id = $request->room_id ? $request->room_id : '1';
+        session()->put('room_id', $room_id);
         return view('home');
     }
 
@@ -37,14 +40,15 @@ class HomeController extends Controller
     {
         //绑定用户
         $this->bind($request);
-        
-         //历史记录
+        //在线用户
+        $this->users();
+        //历史记录
         $this->history();
         //进入聊天室了
         $this->login();
     }
 
-        public function say(Request $request)
+    public function say(Request $request)
     {
         $data = [
             'type' => 'say',
@@ -56,13 +60,36 @@ class HomeController extends Controller
             ]
         ];
 
-        Gateway::sendToAll(json_encode($data));
+        //私聊
+        if ($request->user_id) {
+            $data['data']['name'] = Auth::user()->name . ' 对 ' . User::find($request->user_id)->name . ' 说：';
+            Gateway::sendToUid($request->user_id, json_encode($data));
+            Gateway::sendToUid(Auth::id(), json_encode($data));
+
+            //私聊信息，只发给对应用户，不存数据库了
+            return;
+        }
+
+        Gateway::sendToGroup(session('room_id'), json_encode($data));
 
         //存入数据库，以后可以查询聊天记录
         Message::create([
             'user_id' => Auth::id(),
+            'room_id' => session('room_id'),
             'content' => $request->input('content')
         ]);
+    }
+    /**
+     * 当前在线用户
+     */
+    private function users()
+    {
+        $data = [
+            'type' => 'users',
+            'data' => Gateway::getAllClientSessions()
+        ];
+
+        Gateway::sendToGroup(session('room_id'), json_encode($data));
     }
 
     /**
@@ -73,6 +100,13 @@ class HomeController extends Controller
         $id = Auth::id();
         $client_id = $request->client_id;
         Gateway::bindUid($client_id, $id);
+        Gateway::joinGroup($client_id, session('room_id'));
+
+        Gateway::setSession($client_id, [
+            'id' => $id,
+            'avatar' => Auth::user()->avatar(),
+            'name' => Auth::user()->name
+        ]);
     }
 
         /**
@@ -82,7 +116,7 @@ class HomeController extends Controller
     {
         $data = ['type' => 'history'];
 
-        $messages = Message::with('user')->orderBy('id', 'desc')->limit(3)->get();
+        $messages = Message::with('user')->where('room_id', session('room_id'))->orderBy('id', 'desc')->limit(3)->get();
         $data['data'] = $messages->map(function ($item, $key) {
             return [
                 'avatar' => $item->user->avatar(),
@@ -111,6 +145,6 @@ class HomeController extends Controller
             ]
         ];
 
-        Gateway::sendToAll(json_encode($data));
+        Gateway::sendToGroup(session('room_id'), json_encode($data));
     }
 }

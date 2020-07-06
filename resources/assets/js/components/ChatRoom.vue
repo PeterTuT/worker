@@ -32,19 +32,14 @@
             <div class="col-md-4">
                 <div class="panel panel-default">
                     <div class="panel-heading">在线用户</div>
-
-                    <div class="panel-body">
-                        <ul class="list-group">
-                            <li class="list-group-item">
-                                <img src="https://images.itfun.tv/user/avatar/174/fd44fc.png" class="img-circle">
-                                Aaron
-                            </li>
-                            <li class="list-group-item">
-                                <img src="https://images.itfun.tv/user/avatar/118/0865a4.png" class="img-circle">
-                                Pipi
-                            </li>
-                        </ul>
-                    </div>
+                   <div class="panel-body">
+                    <ul class="list-group">
+                        <li class="list-group-item" v-for="user in users">
+                            <img :src="user.avatar" class="img-circle">
+                            {{user.name}}
+                        </li>
+                    </ul>
+            </div>
 
                 </div>
             </div>
@@ -54,11 +49,10 @@
             <div class="form-group">
                 <label for="user_id">私聊</label>
 
-                <select class="form-control" id="user_id">
+                <select class="form-control" id="user_id" v-model="user_id">
                     <option>所有人</option>
-                    <option>Aaron</option>
-                    <option>Pipi</option>
-                </select>
+                    <option :value="user.id" v-for="user in users">{{user.name}}</option>
+                 </select>
             </div>
 
             <div class="form-group">
@@ -78,6 +72,8 @@ let ws = new WebSocket("ws://127.0.0.1:7272");
             return {
                   messages: [],
                   content: '',
+                  users: [],
+                  user_id: ''
             }
         },
         created() {
@@ -90,6 +86,10 @@ let ws = new WebSocket("ws://127.0.0.1:7272");
                     let type = data.type || ''
 
                     switch(type){
+                        case 'ping':
+                            ws.send('pong');
+                            break;
+                            
                         case 'init':
                             axios.post('/init', {client_id: data.client_id})
                         break;
@@ -102,8 +102,16 @@ let ws = new WebSocket("ws://127.0.0.1:7272");
                         break;
                         
                         case 'history':
-                        this.messages = data.data;
-                        break;
+                            this.messages = data.data;
+                            break;
+
+                        case 'users':
+                            this.users = data.data;
+                            break;
+
+                        case 'logout':
+                            this.$delete(this.users, data.client_id)
+                            break;
 
                         default:
                         console.log(data)
@@ -113,7 +121,7 @@ let ws = new WebSocket("ws://127.0.0.1:7272");
         },
         methods: {
             onSubmit(){
-                 axios.post('/say', {content: this.content})
+                  axios.post('/say', {content: this.content, user_id: this.user_id})
                  this.content = ''
             }
         }
